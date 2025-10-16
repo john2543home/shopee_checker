@@ -1,0 +1,7 @@
+services:
+  - type: worker
+    name: shopee-checker
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    plan: free        # 免費方案

@@ -1,3 +1,3 @@
---only-binary=:all: greenlet==3.0.3
-playwright==1.40.0
+greenlet==3.1.0          # 目前最新 wheel
+playwright==1.41.2       # 相容 greenlet 3.1+
 requests==2.31.0

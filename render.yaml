@@ -1,7 +1,8 @@
 services:
   - type: worker
     name: shopee-checker
-    env: python
-    buildCommand: pip install -r requirements.txt
+    env: python                  # ← 改成下面這行
+    pythonVersion: 3.11.9        # 指定 3.11，greenlet 支援完善
+    buildCommand: pip install -r requirements.txt && playwright install chromium
     startCommand: python main.py
-    plan: free        # 免費方案
+    plan: free

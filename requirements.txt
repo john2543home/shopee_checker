@@ -1,3 +1,2 @@
-greenlet==3.1.0          # 目前最新 wheel
-playwright==1.41.2       # 相容 greenlet 3.1+
+playwright==1.41.2
 requests==2.31.0

@@ -7,8 +7,11 @@ COPY requirements.txt .
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ && rm -rf /var/lib/apt/lists/*
 
-# 2. 強制只用 wheel（不編譯 greenlet）
-RUN pip install --no-cache-dir --only-binary=:all: -r requirements.txt && \
+# 2. 先裝 greenlet wheel（不編譯）
+RUN pip install --no-cache-dir --only-binary=:all: greenlet==3.0.3
+
+# 3. 再裝其他套件
+RUN pip install --no-cache-dir -r requirements.txt && \
     playwright install chromium
 
 COPY main.py .

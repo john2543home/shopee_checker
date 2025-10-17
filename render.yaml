@@ -1,8 +1,6 @@
 services:
   - type: worker
     name: shopee-checker
-    env: python                  # ← 改成下面這行
-    pythonVersion: 3.11.9        # 指定 3.11，greenlet 支援完善
-    buildCommand: pip install -r requirements.txt && playwright install chromium
-    startCommand: python main.py
+    env: docker
+    dockerfilePath: ./Dockerfile
     plan: free

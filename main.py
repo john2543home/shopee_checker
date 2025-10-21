@@ -29,10 +29,16 @@ def update_status(row_id, status):
 def job():
     log.info("worker started")
     while True:
-        try:
-            rows = sess.get(DB_URL, params={'limit': BATCH}, timeout=10).json()
-        except Exception as e:
-            log.error("fetch error: %s", e)
+        # 3 次重試，每次 30 秒
+        for attempt in range(3):
+            try:
+                rows = sess.get(DB_URL, params={'limit': BATCH}, timeout=30).json()
+                break
+            except Exception as e:
+                log.warning("fetch attempt %s failed: %s", attempt+1, e)
+                time.sleep(5)
+        else:           # 3 次都失敗
+            log.error("fetch failed 3 times, skip cycle")
             time.sleep(30)
             continue
 

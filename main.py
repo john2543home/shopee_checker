@@ -3,7 +3,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # === 檔案日誌：/tmp/worker.log ===
-import logging, os
+import logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s: %(message)s',
@@ -24,7 +24,10 @@ sess.mount('https://', HTTPAdapter(max_retries=retries))
 sess.headers.update({'User-Agent': 'RenderWorker/1.0'})
 
 def update_status(row_id, status):
-    sess.post(DB_URL, data={'id': row_id, 'status': status})
+    try:
+        sess.post(DB_URL, data={'id': row_id, 'status': status})
+    except Exception as e:
+        log.error("update_status failed: %s", e)
 
 def job():
     log.info("worker started")
@@ -32,12 +35,22 @@ def job():
         # 3 次重試，每次 30 秒
         for attempt in range(3):
             try:
-                rows = sess.get(DB_URL, params={'limit': BATCH}, timeout=30).json()
-                break
+                res = sess.get(DB_URL, params={'limit': BATCH}, timeout=30)
+                if not res.text.strip():
+                    log.warning("API returned empty body (attempt %s)", attempt+1)
+                    time.sleep(5)
+                    continue
+                try:
+                    rows = res.json()
+                    break
+                except Exception as e:
+                    log.error("Invalid JSON from API (attempt %s): %s → %.200s", attempt+1, e, res.text)
+                    time.sleep(5)
+                    continue
             except Exception as e:
                 log.warning("fetch attempt %s failed: %s", attempt+1, e)
                 time.sleep(5)
-        else:           # 3 次都失敗
+        else:
             log.error("fetch failed 3 times, skip cycle")
             time.sleep(30)
             continue

@@ -21,35 +21,51 @@ API_KEY = os.getenv('API_KEY')
 sess = requests.Session()
 retries = Retry(total=3, backoff_factor=2, status_forcelist=[502, 503, 504])
 sess.mount('https://', HTTPAdapter(max_retries=retries))
-sess.headers.update({'User-Agent': 'RenderWorker/1.0'})
+
+# 完整的瀏覽器頭部，繞過 Cloudflare
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Referer': 'https://543mall.wuaze.com/',
+    'sec-ch-ua': '"Google Chrome";v="120", "Chromium";v="120", "Not?A_Brand";v="99"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin'
+}
+sess.headers.update(headers)
 
 def update_status(row_id, status):
     try:
-        # 添加 i=1 參數
-        sess.post(DB_URL, data={'id': row_id, 'status': status, 'i': 1})
-        log.info("Updated id=%s -> %s", row_id, status)
+        sess.post(DB_URL, data={'id': row_id, 'status': status, 'i': 1}, timeout=30)
     except Exception as e:
         log.error("update_status failed: %s", e)
 
 def job():
     log.info("worker started")
     while True:
-        # 3 次重試，每次 30 秒
         for attempt in range(3):
             try:
-                # 添加 i=1 參數
+                # 使用完整的頭部請求
                 res = sess.get(DB_URL, params={'limit': BATCH, 'i': 1}, timeout=30)
+                
                 if not res.text.strip():
                     log.warning("API returned empty body (attempt %s)", attempt+1)
                     time.sleep(5)
                     continue
+                    
                 try:
                     rows = res.json()
+                    log.info("Successfully fetched %s items", len(rows))
                     break
                 except Exception as e:
                     log.error("Invalid JSON from API (attempt %s): %s → %.200s", attempt+1, e, res.text)
                     time.sleep(5)
                     continue
+                    
             except Exception as e:
                 log.warning("fetch attempt %s failed: %s", attempt+1, e)
                 time.sleep(5)

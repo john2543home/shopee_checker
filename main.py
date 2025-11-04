@@ -25,7 +25,9 @@ sess.headers.update({'User-Agent': 'RenderWorker/1.0'})
 
 def update_status(row_id, status):
     try:
-        sess.post(DB_URL, data={'id': row_id, 'status': status})
+        # 添加 i=1 參數
+        sess.post(DB_URL, data={'id': row_id, 'status': status, 'i': 1})
+        log.info("Updated id=%s -> %s", row_id, status)
     except Exception as e:
         log.error("update_status failed: %s", e)
 
@@ -35,7 +37,8 @@ def job():
         # 3 次重試，每次 30 秒
         for attempt in range(3):
             try:
-                res = sess.get(DB_URL, params={'limit': BATCH}, timeout=30)
+                # 添加 i=1 參數
+                res = sess.get(DB_URL, params={'limit': BATCH, 'i': 1}, timeout=30)
                 if not res.text.strip():
                     log.warning("API returned empty body (attempt %s)", attempt+1)
                     time.sleep(5)

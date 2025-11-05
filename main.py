@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DB_URL  = os.getenv('DB_URL')  # https://shopee-checker-i3ip.onrender.com/api/products
+DB_URL  = os.getenv('DB_URL')
 BATCH   = int(os.getenv('BATCH', 20))
 API_KEY = os.getenv('API_KEY')
 
@@ -22,7 +22,6 @@ sess = requests.Session()
 retries = Retry(total=3, backoff_factor=2, status_forcelist=[502, 503, 504])
 sess.mount('https://', HTTPAdapter(max_retries=retries))
 
-# 簡單的 API 請求頭部
 headers = {
     'User-Agent': 'ShopeeChecker/1.0',
     'Accept': 'application/json',
@@ -37,7 +36,6 @@ def update_status(row_id, status):
             data = {'id': row_id, 'status': status}
             sess.post(DB_URL, data=data, timeout=30)
             log.info("✅ Recorded removed product: id=%s", row_id)
-        # 有效的商品不更新，保持默認狀態
     except Exception as e:
         log.error("update_status failed: %s", e)
 
@@ -51,11 +49,6 @@ def job():
                 
                 if res.status_code != 200:
                     log.warning("HTTP %s from API (attempt %s)", res.status_code, attempt+1)
-                    time.sleep(5)
-                    continue
-                    
-                if not res.text.strip():
-                    log.warning("API returned empty body (attempt %s)", attempt+1)
                     time.sleep(5)
                     continue
                     
@@ -85,34 +78,18 @@ def job():
             url = r['real_url']
             log.info("🔎 Checking product: %s", url)
             
-            api = f'https://api.scrapingant.com/v2/general?url={url}&x-api-key={API_KEY}&wait_for_selector=.product-not-exist__text'
+            api = f'https://api.scrapingant.com/v2/general?url={url}&x-api-key={API_KEY}&browser=true'
             try:
-                html = sess.get(api, timeout=30).text
+                response = sess.get(api, timeout=60)
+                html = response.text
                 
-                # 改進的下架檢測邏輯
-                removed_indicators = [
-                    'product-not-exist__text',
-                    '商品已下架',
-                    '已結束販售',
-                    '已下架',
-                    '商品不存在',
-                    'This product is no available',
-                    'product-not-available'
-                ]
-                
-                is_removed = any(indicator in html for indicator in removed_indicators)
-                
-                if is_removed:
+                # 精確的下架檢測 - 使用找到的確切標誌
+                if 'product-not-exist__text' in html:
                     status = '失效'
-                    log.warning("🚫 Product removed: %s", url)
-                    # 記錄下架商品的詳細信息用於調試
-                    for indicator in removed_indicators:
-                        if indicator in html:
-                            log.info("📝 Found removal indicator: %s", indicator)
-                            break
+                    log.warning("🚫 Product REMOVED: %s", url)
                 else:
                     status = '有效'
-                    log.info("✅ Product active: %s", url)
+                    log.info("✅ Product ACTIVE: %s", url)
                 
                 update_status(r['id'], status)
                 

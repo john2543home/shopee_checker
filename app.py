@@ -34,11 +34,14 @@ else:
     # ===== RENDER API 模式 (或本地開發) =====
     print("🌐 Starting in API Server mode")
     
+
+    
     products = [
-        {"id": 1, "real_url": "https://shopee.tw/product1", "status": "有效"},
-        {"id": 2, "real_url": "https://shopee.tw/product2", "status": "有效"},
-        {"id": 3, "real_url": "https://shopee.tw/product3", "status": "有效"},
-    ]
+    {"id": 1, "real_url": "https://s.shopee.tw/AKPCVLTJJI", "status": "有效"},
+    {"id": 2, "real_url": "https://s.shopee.tw/3VYfxgIky9", "status": "有效"},
+    {"id": 3, "real_url": "https://s.shopee.tw/9zm9iEA070", "status": "有效"},
+    # 繼續添加更多商品...
+]
 
     @app.route('/api/products', methods=['GET'])
     def get_products():

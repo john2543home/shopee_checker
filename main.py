@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DB_URL  = os.getenv('DB_URL')
+DB_URL  = os.getenv('DB_URL')  # 應該是 https://shopee-checker-i3ip.onrender.com/api/products
 BATCH   = int(os.getenv('BATCH', 20))
 API_KEY = os.getenv('API_KEY')
 
@@ -22,36 +22,40 @@ sess = requests.Session()
 retries = Retry(total=3, backoff_factor=2, status_forcelist=[502, 503, 504])
 sess.mount('https://', HTTPAdapter(max_retries=retries))
 
-# 完整的瀏覽器頭部，繞過 Cloudflare
+# 簡單的 API 請求頭部（適用於 Render API）
 headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Referer': 'https://543mall.wuaze.com/',
-    'sec-ch-ua': '"Google Chrome";v="120", "Chromium";v="120", "Not?A_Brand";v="99"',
-    'sec-ch-ua-mobile': '?0',
-    'sec-ch-ua-platform': '"Windows"',
-    'Sec-Fetch-Dest': 'empty',
-    'Sec-Fetch-Mode': 'cors',
-    'Sec-Fetch-Site': 'same-origin'
+    'User-Agent': 'ShopeeChecker/1.0',
+    'Accept': 'application/json',
+    'Accept-Encoding': 'identity'  # 明確要求不壓縮
 }
 sess.headers.update(headers)
 
 def update_status(row_id, status):
     try:
-        sess.post(DB_URL, data={'id': row_id, 'status': status, 'i': 1}, timeout=30)
+        # 簡單的 POST 請求
+        data = {'id': row_id, 'status': status}
+        sess.post(DB_URL, data=data, timeout=30)
+        log.info("Updated id=%s -> %s", row_id, status)
     except Exception as e:
         log.error("update_status failed: %s", e)
 
 def job():
-    log.info("worker started")
+    log.info("worker started - DB_URL: %s", DB_URL)
     while True:
         for attempt in range(3):
             try:
-                # 使用完整的頭部請求
-                res = sess.get(DB_URL, params={'limit': BATCH, 'i': 1}, timeout=30)
+                # 簡單的 GET 請求
+                params = {'limit': BATCH}
+                res = sess.get(DB_URL, params=params, timeout=30)
                 
+                # 記錄回應信息用於調試
+                log.info("API Response - Status: %s, Length: %s", res.status_code, len(res.text))
+                
+                if res.status_code != 200:
+                    log.warning("HTTP %s from API (attempt %s)", res.status_code, attempt+1)
+                    time.sleep(5)
+                    continue
+                    
                 if not res.text.strip():
                     log.warning("API returned empty body (attempt %s)", attempt+1)
                     time.sleep(5)
@@ -62,7 +66,8 @@ def job():
                     log.info("Successfully fetched %s items", len(rows))
                     break
                 except Exception as e:
-                    log.error("Invalid JSON from API (attempt %s): %s → %.200s", attempt+1, e, res.text)
+                    log.error("Invalid JSON from API (attempt %s): %s", attempt+1, e)
+                    log.error("Response content: %.200s", res.text)
                     time.sleep(5)
                     continue
                     

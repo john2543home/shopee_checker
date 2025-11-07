@@ -42,12 +42,12 @@ def update_status(row_id, status):
         log.error("update_status failed: %s", e)
 
 def check_removed(html):
-    """檢測商品是否下架 - 多層次檢測"""
+    """檢測商品是否下架 - 只檢測確切標誌"""
     # 記錄部分HTML用於除錯
     html_sample = html[:200] if len(html) > 200 else html
     log.debug("HTML sample: %s", html_sample)
     
-    # 方法1: 直接檢測
+    # 方法1: 直接檢測確切標誌
     if '此商品不存在' in html:
         log.info("🎯 Detected '此商品不存在' in raw HTML")
         return True
@@ -70,22 +70,9 @@ def check_removed(html):
     except Exception as e:
         log.debug("HTML entity decode failed: %s", e)
     
-    # 方法4: 檢測其他可能的錯誤訊息
-    error_indicators = [
-        'product-not-exist',
-        '商品不存在',
-        '已下架',
-        'sold out',
-        'out of stock',
-        'error-page',
-        '404'
-    ]
+    # 只檢測確切的蝦皮下架標誌，移除模糊的錯誤標誌
+    # 這樣可以避免誤判正常商品
     
-    for indicator in error_indicators:
-        if indicator in html.lower():
-            log.info("🎯 Detected error indicator: %s", indicator)
-            return True
-            
     return False
 
 def job():
@@ -136,7 +123,7 @@ def job():
             response = sess.get(api, timeout=90)  # 增加超時時間
             html = response.text
             
-            # 使用增強的下架檢測
+            # 使用精確的下架檢測
             if check_removed(html):
                 status = '失效'
                 removed_count += 1

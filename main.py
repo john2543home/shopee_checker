@@ -1,4 +1,6 @@
 import os, time, requests, threading
+import urllib.parse
+import html as html_parser
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -39,6 +41,53 @@ def update_status(row_id, status):
     except Exception as e:
         log.error("update_status failed: %s", e)
 
+def check_removed(html):
+    """檢測商品是否下架 - 多層次檢測"""
+    # 記錄部分HTML用於除錯
+    html_sample = html[:200] if len(html) > 200 else html
+    log.debug("HTML sample: %s", html_sample)
+    
+    # 方法1: 直接檢測
+    if '此商品不存在' in html:
+        log.info("🎯 Detected '此商品不存在' in raw HTML")
+        return True
+        
+    # 方法2: URL解碼後檢測
+    try:
+        decoded_html = urllib.parse.unquote(html)
+        if '此商品不存在' in decoded_html:
+            log.info("🎯 Detected '此商品不存在' in URL decoded HTML")
+            return True
+    except Exception as e:
+        log.debug("URL decode failed: %s", e)
+        
+    # 方法3: HTML實體解碼後檢測
+    try:
+        decoded_html = html_parser.unescape(html)
+        if '此商品不存在' in decoded_html:
+            log.info("🎯 Detected '此商品不存在' in HTML entity decoded HTML")
+            return True
+    except Exception as e:
+        log.debug("HTML entity decode failed: %s", e)
+    
+    # 方法4: 檢測其他可能的錯誤訊息
+    error_indicators = [
+        'product-not-exist',
+        '商品不存在',
+        '已下架',
+        'sold out',
+        'out of stock',
+        'error-page',
+        '404'
+    ]
+    
+    for indicator in error_indicators:
+        if indicator in html.lower():
+            log.info("🎯 Detected error indicator: %s", indicator)
+            return True
+            
+    return False
+
 def job():
     log.info("worker started - DB_URL: %s", DB_URL)
     
@@ -73,21 +122,28 @@ def job():
         log.info("📭 No products to check")
         return
 
+    removed_count = 0
+    active_count = 0
+    
     for r in rows:
         url = r['real_url']
         log.info("🔎 Checking product: %s", url)
         
-        api = f'https://api.scrapingant.com/v2/general?url={url}&x-api-key={API_KEY}&browser=true'
+        # 增加 browser_wait=8000 讓蝦皮JS有足夠時間執行
+        api = f'https://api.scrapingant.com/v2/general?url={url}&x-api-key={API_KEY}&browser=true&browser_wait=8000'
+        
         try:
-            response = sess.get(api, timeout=60)
+            response = sess.get(api, timeout=90)  # 增加超時時間
             html = response.text
             
-            # 精確的下架檢測 - 使用找到的確切標誌
-            if 'product-not-exist__text' in html:
+            # 使用增強的下架檢測
+            if check_removed(html):
                 status = '失效'
+                removed_count += 1
                 log.warning("🚫 Product REMOVED: %s", url)
             else:
                 status = '有效'
+                active_count += 1
                 log.info("✅ Product ACTIVE: %s", url)
             
             update_status(r['id'], status)
@@ -96,6 +152,7 @@ def job():
             log.error("scrapingant error for %s: %s", url, e)
             continue
 
+    log.info("📊 Check completed: %s active, %s removed", active_count, removed_count)
     log.info("✅ Single batch completed - exiting")
 
 if __name__ == '__main__':

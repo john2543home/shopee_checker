@@ -41,64 +41,62 @@ def update_status(row_id, status):
 
 def job():
     log.info("worker started - DB_URL: %s", DB_URL)
-    while True:
-        for attempt in range(3):
-            try:
-                params = {'limit': BATCH}
-                res = sess.get(DB_URL, params=params, timeout=30)
-                
-                if res.status_code != 200:
-                    log.warning("HTTP %s from API (attempt %s)", res.status_code, attempt+1)
-                    time.sleep(5)
-                    continue
-                    
-                try:
-                    rows = res.json()
-                    log.info("🔍 Checking %s products", len(rows))
-                    break
-                except Exception as e:
-                    log.error("Invalid JSON from API (attempt %s): %s", attempt+1, e)
-                    time.sleep(5)
-                    continue
-                    
-            except Exception as e:
-                log.warning("fetch attempt %s failed: %s", attempt+1, e)
-                time.sleep(5)
-        else:
-            log.error("fetch failed 3 times, skip cycle")
-            time.sleep(30)
-            continue
-
-        if not rows:
-            log.info("📭 No products to check, sleep 5min")
-            time.sleep(300)
-            continue
-
-        for r in rows:
-            url = r['real_url']
-            log.info("🔎 Checking product: %s", url)
+    
+    # 單次執行，移除 while True 循環
+    for attempt in range(3):
+        try:
+            params = {'limit': BATCH}
+            res = sess.get(DB_URL, params=params, timeout=30)
             
-            api = f'https://api.scrapingant.com/v2/general?url={url}&x-api-key={API_KEY}&browser=true'
-            try:
-                response = sess.get(api, timeout=60)
-                html = response.text
-                
-                # 精確的下架檢測 - 使用找到的確切標誌
-                if 'product-not-exist__text' in html:
-                    status = '失效'
-                    log.warning("🚫 Product REMOVED: %s", url)
-                else:
-                    status = '有效'
-                    log.info("✅ Product ACTIVE: %s", url)
-                
-                update_status(r['id'], status)
-                
-            except Exception as e:
-                log.error("scrapingant error for %s: %s", url, e)
+            if res.status_code != 200:
+                log.warning("HTTP %s from API (attempt %s)", res.status_code, attempt+1)
+                time.sleep(5)
                 continue
+                
+            try:
+                rows = res.json()
+                log.info("🔍 Checking %s products", len(rows))
+                break
+            except Exception as e:
+                log.error("Invalid JSON from API (attempt %s): %s", attempt+1, e)
+                time.sleep(5)
+                continue
+                
+        except Exception as e:
+            log.warning("fetch attempt %s failed: %s", attempt+1, e)
+            time.sleep(5)
+    else:
+        log.error("fetch failed 3 times, skip cycle")
+        return
 
-        log.info("🔄 Batch completed, wait 30s")
-        time.sleep(30)
+    if not rows:
+        log.info("📭 No products to check")
+        return
+
+    for r in rows:
+        url = r['real_url']
+        log.info("🔎 Checking product: %s", url)
+        
+        api = f'https://api.scrapingant.com/v2/general?url={url}&x-api-key={API_KEY}&browser=true'
+        try:
+            response = sess.get(api, timeout=60)
+            html = response.text
+            
+            # 精確的下架檢測 - 使用找到的確切標誌
+            if 'product-not-exist__text' in html:
+                status = '失效'
+                log.warning("🚫 Product REMOVED: %s", url)
+            else:
+                status = '有效'
+                log.info("✅ Product ACTIVE: %s", url)
+            
+            update_status(r['id'], status)
+            
+        except Exception as e:
+            log.error("scrapingant error for %s: %s", url, e)
+            continue
+
+    log.info("✅ Single batch completed - exiting")
 
 if __name__ == '__main__':
     job()

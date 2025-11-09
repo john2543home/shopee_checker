@@ -26,12 +26,11 @@ sess.mount('https://', HTTPAdapter(max_retries=retries))
 # 設定通用的請求頭
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept': 'application/json, text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8',
     'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8,zh-CN;q=0.7',
     'Accept-Encoding': 'gzip, deflate, br',
     'DNT': '1',
     'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
 }
 sess.headers.update(headers)
 
@@ -98,7 +97,14 @@ def job():
     for attempt in range(3):
         try:
             params = {'limit': BATCH}
+            log.info("🔍 嘗試從 API 獲取商品 (attempt %s)", attempt+1)
             res = sess.get(DB_URL, params=params, timeout=30)
+            
+            # 添加詳細除錯信息
+            log.info("🔍 API 回應狀態碼: %s", res.status_code)
+            log.info("🔍 API 回應標頭: %s", dict(res.headers))
+            log.info("🔍 API 回應內容 (前500字符): %s", res.text[:500])
+            log.info("🔍 API 回應內容類型: %s", res.headers.get('Content-Type', 'Unknown'))
             
             if res.status_code != 200:
                 log.warning("HTTP %s from API (attempt %s)", res.status_code, attempt+1)
@@ -107,10 +113,11 @@ def job():
                 
             try:
                 rows = res.json()
-                log.info("🔍 Checking %s products", len(rows))
+                log.info("✅ 成功解析 JSON，找到 %s 個商品", len(rows))
                 break
             except Exception as e:
-                log.error("Invalid JSON from API (attempt %s): %s", attempt+1, e)
+                log.error("❌ JSON 解析失敗 (attempt %s): %s", attempt+1, e)
+                log.error("❌ 回應內容開始: %s", res.text[:200])
                 time.sleep(5)
                 continue
                 
@@ -118,7 +125,7 @@ def job():
             log.warning("fetch attempt %s failed: %s", attempt+1, e)
             time.sleep(5)
     else:
-        log.error("fetch failed 3 times, skip cycle")
+        log.error("🚫 獲取商品失敗 3 次，跳過本輪檢查")
         return
 
     if not rows:
@@ -134,7 +141,15 @@ def job():
         
         try:
             # 免費方案：直接訪問蝦皮
-            response = sess.get(url, timeout=30)
+            shopee_headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+            }
+            
+            response = sess.get(url, headers=shopee_headers, timeout=30)
+            log.info("🔍 蝦皮頁面狀態碼: %s", response.status_code)
+            
             html = response.text
             
             # 使用下架檢測
@@ -150,7 +165,7 @@ def job():
             update_status(r['id'], status)
             
         except Exception as e:
-            log.error("訪問商品頁面失敗: %s", e)
+            log.error("❌ 訪問商品頁面失敗: %s", e)
             continue
 
     log.info("📊 Check completed: %s active, %s removed", active_count, removed_count)

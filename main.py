@@ -23,17 +23,6 @@ sess = requests.Session()
 retries = Retry(total=3, backoff_factor=2, status_forcelist=[502, 503, 504])
 sess.mount('https://', HTTPAdapter(max_retries=retries))
 
-# 設定通用的請求頭
-headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8',
-    'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8,zh-CN;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'DNT': '1',
-    'Connection': 'keep-alive',
-}
-sess.headers.update(headers)
-
 def update_status(row_id, status):
     """只更新失效的商品狀態"""
     try:
@@ -98,7 +87,15 @@ def job():
         try:
             params = {'limit': BATCH}
             log.info("🔍 嘗試從 API 獲取商品 (attempt %s)", attempt+1)
-            res = sess.get(DB_URL, params=params, timeout=30)
+            
+            # 禁用壓縮，確保能正確解析 JSON
+            api_headers = {
+                'User-Agent': 'ShopeeChecker/1.0',
+                'Accept': 'application/json',
+                'Accept-Encoding': 'identity'  # 禁用壓縮
+            }
+            
+            res = sess.get(DB_URL, params=params, timeout=30, headers=api_headers)
             
             # 添加詳細除錯信息
             log.info("🔍 API 回應狀態碼: %s", res.status_code)
@@ -140,11 +137,12 @@ def job():
         log.info("🔎 Checking product: %s", url)
         
         try:
-            # 免費方案：直接訪問蝦皮
+            # 免費方案：直接訪問蝦皮（使用不同標頭）
             shopee_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br'  # 對蝦皮啟用壓縮
             }
             
             response = sess.get(url, headers=shopee_headers, timeout=30)

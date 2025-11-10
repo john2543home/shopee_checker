@@ -34,18 +34,18 @@ def update_status(row_id, status):
         log.error("update_status failed: %s", e)
 
 def check_removed(html):
-    """更精確的下架檢測 - 減少誤判"""
-    # 記錄部分HTML用於除錯（前300字符）
-    html_preview = html[:300] if len(html) > 300 else html
+    """精確的下架檢測 - 針對蝦皮下架頁面"""
+    # 記錄部分HTML用於除錯（前500字符）
+    html_preview = html[:500] if len(html) > 500 else html
     log.info("📄 HTML preview: %s", html_preview)
     
-    # 第一階段：確切的下架標誌（高置信度）
+    # 確切的下架標誌 - 基於實際下架頁面分析
     exact_removed_indicators = [
-        '此商品不存在',
+        'product-not-exist__text">此商品不存在</div>',  # 完整HTML標籤
+        'product-not-exist__text',                      # CSS類名
+        '此商品不存在',                                  # 文字內容
         '商品已下架',
-        'product-not-exist',
         '很抱歉，您訪問的頁面不存在',
-        'Page Not Found',
         '該商品已不存在'
     ]
     
@@ -54,7 +54,7 @@ def check_removed(html):
             log.info("🎯 確切檢測到下架標誌: %s", indicator)
             return True
     
-    # 第二階段：檢查正常商品頁面的特徵（高置信度）
+    # 檢查正常商品頁面的特徵
     active_product_indicators = [
         'shopee-product-info',
         'product-detail',
@@ -71,22 +71,20 @@ def check_removed(html):
             log.info("🏪 檢測到正常商品頁面特徵: %s", indicator)
             return False
     
-    # 第三階段：謹慎使用模糊標誌（低置信度）
-    # 注意：'404' 可能出現在正常頁面中，所以放在最後且需要其他條件配合
+    # 謹慎使用模糊標誌
     weak_removed_indicators = [
         '404',
         'out of stock',
         'sold out'
     ]
     
-    # 只有在沒有檢測到正常頁面特徵時，才考慮模糊標誌
     weak_match_count = 0
     for indicator in weak_removed_indicators:
         if indicator.lower() in html.lower():
             weak_match_count += 1
             log.info("⚠️ 檢測到模糊下架標誌: %s", indicator)
     
-    # 如果有多個模糊標誌且沒有正常頁面特徵，才判斷為下架
+    # 只有在沒有檢測到正常頁面特徵時，才考慮模糊標誌
     if weak_match_count >= 2:
         log.info("🎯 多個模糊標誌確認商品下架")
         return True
@@ -151,12 +149,12 @@ def job():
         log.info("🔎 Checking product: %s", url)
         
         try:
-            # 免費方案：直接訪問蝦皮（使用不同標頭）
+            # 免費方案：直接訪問蝦皮
             shopee_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br'  # 對蝦皮啟用壓縮
+                'Accept-Encoding': 'gzip, deflate, br'
             }
             
             response = sess.get(url, headers=shopee_headers, timeout=30)
@@ -164,7 +162,7 @@ def job():
             
             html = response.text
             
-            # 使用更精確的下架檢測
+            # 使用精確的下架檢測
             if check_removed(html):
                 status = '失效'
                 removed_count += 1

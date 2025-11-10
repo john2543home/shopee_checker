@@ -34,49 +34,65 @@ def update_status(row_id, status):
         log.error("update_status failed: %s", e)
 
 def check_removed(html):
-    """檢測商品是否下架 - 免費版本"""
-    # 記錄部分HTML用於除錯（前500字符）
-    html_preview = html[:500] if len(html) > 500 else html
+    """更精確的下架檢測 - 減少誤判"""
+    # 記錄部分HTML用於除錯（前300字符）
+    html_preview = html[:300] if len(html) > 300 else html
     log.info("📄 HTML preview: %s", html_preview)
     
-    # 方法1: 直接檢測確切標誌
-    if '此商品不存在' in html:
-        log.info("🎯 確切檢測到 '此商品不存在'")
-        return True
-        
-    # 方法2: URL解碼後檢測
-    try:
-        decoded_html = urllib.parse.unquote(html)
-        if '此商品不存在' in decoded_html:
-            log.info("🎯 檢測到 '此商品不存在' (URL解碼後)")
-            return True
-    except Exception as e:
-        log.debug("URL decode failed: %s", e)
-        
-    # 方法3: HTML實體解碼後檢測
-    try:
-        decoded_html = html_parser.unescape(html)
-        if '此商品不存在' in decoded_html:
-            log.info("🎯 檢測到 '此商品不存在' (HTML實體解碼後)")
-            return True
-    except Exception as e:
-        log.debug("HTML entity decode failed: %s", e)
-    
-    # 方法4: 檢測其他蝦皮錯誤頁面特徵
-    error_indicators = [
-        'product-not-exist',
+    # 第一階段：確切的下架標誌（高置信度）
+    exact_removed_indicators = [
+        '此商品不存在',
         '商品已下架',
+        'product-not-exist',
         '很抱歉，您訪問的頁面不存在',
         'Page Not Found',
-        '404',
+        '該商品已不存在'
     ]
     
-    for indicator in error_indicators:
-        if indicator.lower() in html.lower():
-            log.info("🎯 檢測到錯誤標誌: %s", indicator)
+    for indicator in exact_removed_indicators:
+        if indicator in html:
+            log.info("🎯 確切檢測到下架標誌: %s", indicator)
             return True
     
-    log.info("🔍 未檢測到下架標誌，商品可能有效")
+    # 第二階段：檢查正常商品頁面的特徵（高置信度）
+    active_product_indicators = [
+        'shopee-product-info',
+        'product-detail',
+        'item-review',
+        'product-briefing',
+        'add-to-cart',
+        '加入購物車',
+        '商品規格',
+        '商品評價'
+    ]
+    
+    for indicator in active_product_indicators:
+        if indicator in html:
+            log.info("🏪 檢測到正常商品頁面特徵: %s", indicator)
+            return False
+    
+    # 第三階段：謹慎使用模糊標誌（低置信度）
+    # 注意：'404' 可能出現在正常頁面中，所以放在最後且需要其他條件配合
+    weak_removed_indicators = [
+        '404',
+        'out of stock',
+        'sold out'
+    ]
+    
+    # 只有在沒有檢測到正常頁面特徵時，才考慮模糊標誌
+    weak_match_count = 0
+    for indicator in weak_removed_indicators:
+        if indicator.lower() in html.lower():
+            weak_match_count += 1
+            log.info("⚠️ 檢測到模糊下架標誌: %s", indicator)
+    
+    # 如果有多個模糊標誌且沒有正常頁面特徵，才判斷為下架
+    if weak_match_count >= 2:
+        log.info("🎯 多個模糊標誌確認商品下架")
+        return True
+    
+    # 預設情況：沒有明確證據就認為商品有效
+    log.info("🔍 未檢測到明確下架證據，商品判定為有效")
     return False
 
 def job():
@@ -100,8 +116,6 @@ def job():
             # 添加詳細除錯信息
             log.info("🔍 API 回應狀態碼: %s", res.status_code)
             log.info("🔍 API 回應標頭: %s", dict(res.headers))
-            log.info("🔍 API 回應內容 (前500字符): %s", res.text[:500])
-            log.info("🔍 API 回應內容類型: %s", res.headers.get('Content-Type', 'Unknown'))
             
             if res.status_code != 200:
                 log.warning("HTTP %s from API (attempt %s)", res.status_code, attempt+1)
@@ -150,7 +164,7 @@ def job():
             
             html = response.text
             
-            # 使用下架檢測
+            # 使用更精確的下架檢測
             if check_removed(html):
                 status = '失效'
                 removed_count += 1

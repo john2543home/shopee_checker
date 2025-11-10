@@ -1,6 +1,0 @@
-services:
-  - type: worker
-    name: shopee-checker
-    env: docker
-    dockerfilePath: ./Dockerfile
-    plan: free
